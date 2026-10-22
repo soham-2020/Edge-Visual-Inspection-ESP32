@@ -2,6 +2,13 @@
 
 An industrial visual anomaly detection prototype using an AI Thinker ESP32-CAM, an Edge Impulse image classifier, MQTT, Mosquitto, and a Node-RED dashboard.
 
+Clone this repository:
+
+```sh
+git clone https://github.com/soham-2020/Edge-Visual-Inspection-ESP32.git
+cd Edge-Visual-Inspection-ESP32
+```
+
 > **Performance results:** The project reports 87.8% overall accuracy, 94.8% anomaly recall, 78.4% normal recall, an anomaly F1 score of 0.90, about 643 ms inference per frame, and about 280 KB RAM use. These are the project's documented measurements; this repository update has not independently reproduced them.
 
 ## Repository contents
