@@ -1,49 +1,23 @@
-/* Edge Impulse Arduino examples
- * Copyright (c) 2022 EdgeImpulse Inc.
- * Modified to include WiFi + MQTT publishing
+/*
+ * Edge Impulse camera classifier with Wi-Fi and MQTT publishing.
+ * Copy secrets.h.example to secrets.h and add local credentials before compiling.
  */
-
-/* Includes ---------------------------------------------------------------- */
 #include <MetalMind-project-1_inferencing.h>
 #include "edge-impulse-sdk/dsp/image/image.hpp"
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include "secrets.h"
 
-/* WiFi & MQTT credentials ------------------------------------------------- */
-const char* ssid = "******";
-const char* password = "******";
-const char* mqtt_server = "******";
-const char* mqtt_user = "******";
-const char* mqtt_pass = "******";
+#ifndef MQTT_PORT
+#define MQTT_PORT 1883
+#endif
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-/* Camera model ------------------------------------------------------------ */
-//#define CAMERA_MODEL_ESP_EYE
-#define CAMERA_MODEL_AI_THINKER // Has PSRAM
-
-#if defined(CAMERA_MODEL_ESP_EYE)
-#define PWDN_GPIO_NUM    -1
-#define RESET_GPIO_NUM   -1
-#define XCLK_GPIO_NUM    4
-#define SIOD_GPIO_NUM    18
-#define SIOC_GPIO_NUM    23
-#define Y9_GPIO_NUM      36
-#define Y8_GPIO_NUM      37
-#define Y7_GPIO_NUM      38
-#define Y6_GPIO_NUM      39
-#define Y5_GPIO_NUM      35
-#define Y4_GPIO_NUM      14
-#define Y3_GPIO_NUM      13
-#define Y2_GPIO_NUM      34
-#define VSYNC_GPIO_NUM   5
-#define HREF_GPIO_NUM    27
-#define PCLK_GPIO_NUM    25
-
-#elif defined(CAMERA_MODEL_AI_THINKER)
+#define CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -61,19 +35,13 @@ PubSubClient client(espClient);
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-#else
-#error "Camera model not selected"
-#endif
+#define EI_CAMERA_RAW_FRAME_BUFFER_COLS 320
+#define EI_CAMERA_RAW_FRAME_BUFFER_ROWS 240
+#define EI_CAMERA_FRAME_BYTE_SIZE 3
 
-/* Constant defines -------------------------------------------------------- */
-#define EI_CAMERA_RAW_FRAME_BUFFER_COLS           320
-#define EI_CAMERA_RAW_FRAME_BUFFER_ROWS           240
-#define EI_CAMERA_FRAME_BYTE_SIZE                 3
-
-/* Private variables ------------------------------------------------------- */
 static bool debug_nn = false;
 static bool is_initialised = false;
-uint8_t *snapshot_buf;
+static uint8_t *snapshot_buf = nullptr;
 
 static camera_config_t camera_config = {
     .pin_pwdn = PWDN_GPIO_NUM,
@@ -103,71 +71,78 @@ static camera_config_t camera_config = {
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
 };
 
-/* Function definitions ------------------------------------------------------- */
 bool ei_camera_init(void);
-void ei_camera_deinit(void);
 bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf);
+static int ei_camera_get_data(size_t offset, size_t length, float *out_ptr);
 
-/* WiFi Setup --------------------------------------------------------------- */
 void setup_wifi() {
-    WiFi.begin(ssid, password);
-    Serial.print("Connecting to WiFi");
-    while (WiFi.status() != WL_CONNECTED) {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.print("Connecting to Wi-Fi");
+    const unsigned long started = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - started < 30000) {
         delay(500);
         Serial.print(".");
     }
-    Serial.println("\nWiFi connected!");
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("\nWi-Fi connection timed out; restarting in 5 seconds.");
+        delay(5000);
+        ESP.restart();
+    }
+    Serial.print("\nWi-Fi connected, IP: ");
     Serial.println(WiFi.localIP());
 }
 
-/* MQTT Reconnect ----------------------------------------------------------- */
 void reconnect_mqtt() {
     while (!client.connected()) {
         Serial.print("Connecting to MQTT...");
-        if (client.connect("ESP32CAM", mqtt_user, mqtt_pass)) {
-            Serial.println("connected!");
+        if (client.connect("ESP32CAM", MQTT_USERNAME, MQTT_PASSWORD)) {
+            Serial.println("connected");
         } else {
-            Serial.print("failed, rc=");
+            Serial.print("failed, state=");
             Serial.println(client.state());
-            delay(2000);
+            delay(3000);
         }
     }
 }
 
-/* Setup -------------------------------------------------------------------- */
 void setup() {
     Serial.begin(115200);
-    while (!Serial);
-    Serial.println("Edge Impulse Inferencing Demo");
+    delay(100);
+    Serial.println("\nEdge Impulse visual inspection");
 
     setup_wifi();
-    client.setServer(mqtt_server, 1883);
+    client.setServer(MQTT_SERVER, MQTT_PORT);
 
-    if (ei_camera_init() == false) {
-        ei_printf("Failed to initialize Camera!\r\n");
-    } else {
-        ei_printf("Camera initialized\r\n");
+    if (!ei_camera_init()) {
+        Serial.println("Camera initialization failed; stopping.");
+        while (true) delay(1000);
     }
-
-    ei_printf("\nStarting inference in 2 seconds...\n");
-    ei_sleep(2000);
+    Serial.println("Camera initialized");
+    delay(2000);
 }
 
-/* Loop --------------------------------------------------------------------- */
 void loop() {
-    if (!client.connected()) {
-        reconnect_mqtt();
-    }
+    if (!client.connected()) reconnect_mqtt();
     client.loop();
 
-    if (ei_sleep(5) != EI_IMPULSE_OK) {
+    if (ei_sleep(5) != EI_IMPULSE_OK) return;
+
+    const size_t buffer_size = EI_CAMERA_RAW_FRAME_BUFFER_COLS *
+                               EI_CAMERA_RAW_FRAME_BUFFER_ROWS *
+                               EI_CAMERA_FRAME_BYTE_SIZE;
+    snapshot_buf = (uint8_t *)malloc(buffer_size);
+    if (snapshot_buf == nullptr) {
+        Serial.println("ERR: Could not allocate image buffer");
+        delay(1000);
         return;
     }
 
-    snapshot_buf = (uint8_t*)malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS * EI_CAMERA_FRAME_BYTE_SIZE);
-
-    if (snapshot_buf == nullptr) {
-        ei_printf("ERR: Failed to allocate snapshot buffer!\n");
+    if (!ei_camera_capture(EI_CLASSIFIER_INPUT_WIDTH,
+                          EI_CLASSIFIER_INPUT_HEIGHT, snapshot_buf)) {
+        Serial.println("Camera capture failed");
+        free(snapshot_buf);
+        snapshot_buf = nullptr;
         return;
     }
 
@@ -175,105 +150,84 @@ void loop() {
     signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_HEIGHT;
     signal.get_data = &ei_camera_get_data;
 
-    if (ei_camera_capture((size_t)EI_CLASSIFIER_INPUT_WIDTH, (size_t)EI_CLASSIFIER_INPUT_HEIGHT, snapshot_buf) == false) {
-        ei_printf("Failed to capture image\r\n");
-        free(snapshot_buf);
-        return;
-    }
-
-    ei_impulse_result_t result = { 0 };
-    EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
+    ei_impulse_result_t result = {0};
+    const EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
     if (err != EI_IMPULSE_OK) {
-        ei_printf("ERR: Failed to run classifier (%d)\n", err);
+        Serial.printf("Classifier failed: %d\n", err);
         free(snapshot_buf);
+        snapshot_buf = nullptr;
         return;
     }
 
-    // Find best prediction
-    float max_val = 0;
-    const char* max_label = "";
-    for (uint16_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
-        if (result.classification[i].value > max_val) {
-            max_val = result.classification[i].value;
-            max_label = ei_classifier_inferencing_categories[i];
+    float confidence = 0.0f;
+    const char *status = "unknown";
+    for (uint16_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; ++i) {
+        if (result.classification[i].value > confidence) {
+            confidence = result.classification[i].value;
+            status = ei_classifier_inferencing_categories[i];
         }
     }
 
-    // Print to serial
-    ei_printf("Prediction: %s (%.2f%%)\n", max_label, max_val * 100);
+    Serial.printf("Prediction: %s (%.2f%%)\n", status, confidence * 100.0f);
 
-    // Publish to MQTT
     StaticJsonDocument<200> doc;
-    doc["status"] = max_label;
-    doc["confidence"] = max_val * 100;
+    doc["status"] = status;
+    doc["confidence"] = confidence * 100.0f;
     doc["dsp_ms"] = result.timing.dsp;
     doc["classification_ms"] = result.timing.classification;
 
     char payload[200];
-    serializeJson(doc, payload);
-    client.publish("motor/status", payload);
-    ei_printf("Published: %s\n", payload);
+    serializeJson(doc, payload, sizeof(payload));
+    if (client.publish("motor/status", payload)) {
+        Serial.printf("Published: %s\n", payload);
+    } else {
+        Serial.println("MQTT publish failed");
+    }
 
     free(snapshot_buf);
+    snapshot_buf = nullptr;
 }
 
-/* Camera Init -------------------------------------------------------------- */
 bool ei_camera_init(void) {
     if (is_initialised) return true;
 
-    esp_err_t err = esp_camera_init(&camera_config);
+    const esp_err_t err = esp_camera_init(&camera_config);
     if (err != ESP_OK) {
         Serial.printf("Camera init failed with error 0x%x\n", err);
         return false;
     }
 
-    sensor_t * s = esp_camera_sensor_get();
-    if (s->id.PID == OV3660_PID) {
-        s->set_vflip(s, 1);
-        s->set_brightness(s, 1);
-        s->set_saturation(s, 0);
+    sensor_t *sensor = esp_camera_sensor_get();
+    if (sensor && sensor->id.PID == OV3660_PID) {
+        sensor->set_vflip(sensor, 1);
+        sensor->set_brightness(sensor, 1);
+        sensor->set_saturation(sensor, 0);
     }
-
     is_initialised = true;
     return true;
 }
 
-void ei_camera_deinit(void) {
-    esp_err_t err = esp_camera_deinit();
-    if (err != ESP_OK) {
-        ei_printf("Camera deinit failed\n");
-        return;
-    }
-    is_initialised = false;
-}
-
 bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf) {
-    bool do_resize = false;
-
     if (!is_initialised) {
-        ei_printf("ERR: Camera is not initialized\r\n");
+        Serial.println("Camera is not initialized");
         return false;
     }
 
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
-        ei_printf("Camera capture failed\n");
+        Serial.println("Camera capture failed");
         return false;
     }
 
-    bool converted = fmt2rgb888(fb->buf, fb->len, PIXFORMAT_JPEG, snapshot_buf);
+    const bool converted = fmt2rgb888(fb->buf, fb->len, PIXFORMAT_JPEG, out_buf);
     esp_camera_fb_return(fb);
-
     if (!converted) {
-        ei_printf("Conversion failed\n");
+        Serial.println("JPEG to RGB conversion failed");
         return false;
     }
 
-    if ((img_width != EI_CAMERA_RAW_FRAME_BUFFER_COLS) || (img_height != EI_CAMERA_RAW_FRAME_BUFFER_ROWS)) {
-        do_resize = true;
-    }
-
-    if (do_resize) {
+    if (img_width != EI_CAMERA_RAW_FRAME_BUFFER_COLS ||
+        img_height != EI_CAMERA_RAW_FRAME_BUFFER_ROWS) {
         ei::image::processing::crop_and_interpolate_rgb888(
             out_buf,
             EI_CAMERA_RAW_FRAME_BUFFER_COLS,
@@ -282,24 +236,20 @@ bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf
             img_width,
             img_height);
     }
-
     return true;
 }
 
 static int ei_camera_get_data(size_t offset, size_t length, float *out_ptr) {
-    size_t pixel_ix = offset * 3;
-    size_t pixels_left = length;
-    size_t out_ptr_ix = 0;
-
-    while (pixels_left != 0) {
-        out_ptr[out_ptr_ix] = (snapshot_buf[pixel_ix + 2] << 16) + (snapshot_buf[pixel_ix + 1] << 8) + snapshot_buf[pixel_ix];
-        out_ptr_ix++;
-        pixel_ix += 3;
-        pixels_left--;
+    size_t pixel_index = offset * 3;
+    for (size_t i = 0; i < length; ++i) {
+        out_ptr[i] = (snapshot_buf[pixel_index + 2] << 16) |
+                     (snapshot_buf[pixel_index + 1] << 8) |
+                      snapshot_buf[pixel_index];
+        pixel_index += 3;
     }
     return 0;
 }
 
 #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_CAMERA
-#error "Invalid model for current sensor"
+#error "The exported Edge Impulse model must use a camera sensor"
 #endif

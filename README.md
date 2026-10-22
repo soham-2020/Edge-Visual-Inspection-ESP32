@@ -1,261 +1,156 @@
-<div align="center">
-
 # Edge Visual Inspection System — TinyML on ESP32-CAM
-### Real-Time Edge AI + IoT Monitoring System
 
-[![Arduino](https://img.shields.io/badge/Arduino-IDE%202.x-00979D?style=for-the-badge&logo=arduino&logoColor=white)](https://www.arduino.cc/)
-[![TensorFlow Lite](https://img.shields.io/badge/TensorFlow%20Lite-Micro-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)](https://www.tensorflow.org/lite)
-[![MQTT](https://img.shields.io/badge/MQTT-Mosquitto-660066?style=for-the-badge&logo=eclipse-mosquitto&logoColor=white)](https://mosquitto.org/)
-[![Node-RED](https://img.shields.io/badge/Node--RED-Dashboard-8F0000?style=for-the-badge&logo=node-red&logoColor=white)](https://nodered.org/)
-[![Edge Impulse](https://img.shields.io/badge/Edge%20Impulse-TinyML-4B0082?style=for-the-badge)](https://edgeimpulse.com/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+An industrial visual anomaly detection prototype using an AI Thinker ESP32-CAM, an Edge Impulse image classifier, MQTT, Mosquitto, and a Node-RED dashboard.
 
-<br/>
+Clone this repository:
 
-> **Deploying production-grade AI on a Rs.500 microcontroller.**
-> Real-time visual anomaly detection at the edge — no cloud, no compromise.
-
-<br/>
-
-![Status](https://img.shields.io/badge/Status-Live%20%26%20Working-brightgreen?style=for-the-badge)
-![Accuracy](https://img.shields.io/badge/Anomaly%20Recall-94.8%25-blue?style=for-the-badge)
-![RAM](https://img.shields.io/badge/RAM%20Usage-280KB-orange?style=for-the-badge)
-
-<br/>
-
-[![Watch Demo](https://img.shields.io/badge/Watch-Demo%20Video-red?style=for-the-badge&logo=youtube)](https://youtube.com/shorts/fE8pEs_nPZ4)
-
-</div>
-
----
-
-## Problem Statement
-
-Industrial motors and rotating equipment are critical assets in manufacturing plants, power stations, and processing facilities. Undetected anomalies — such as surface defects, misalignment, foreign object intrusion, or abnormal wear — lead to unplanned downtime, costly repairs, and serious safety hazards.
-
-Current solutions fail in different ways:
-
-| Approach | Problem |
-|----------|---------|
-| Manual Inspection | Slow, inconsistent, error-prone, dangerous |
-| Cloud Vision AI | Expensive, high latency, internet-dependent, privacy risk |
-
-Neither works in resource-constrained or remote environments.
-
-This project deploys a quantized **MobileNetV2 model directly on an ESP32-CAM** — 520KB RAM, under Rs.500 — achieving **94.8% anomaly recall** with zero cloud dependency, over a secured MQTT pipeline feeding a live IoT dashboard.
-
----
-
-## System Architecture
-
-```
-+-------------------------------+
-|         ESP32-CAM             |
-|  OV2640 Camera                |
-|  MobileNetV2 int8 Inference   |
-|  MQTT Publish                 |
-+---------------+---------------+
-                |
-         WiFi (Secured MQTT)
-                |
-+---------------v---------------+
-|   Mosquitto MQTT Broker       |
-|   Auth Required               |
-|   No Anonymous Connections    |
-+---------------+---------------+
-                |
-+---------------v---------------+
-|   Node-RED IoT Dashboard      |
-|   Confidence Gauge            |
-|   Motor Status                |
-|   bcrypt Auth Protected       |
-+-------------------------------+
+```sh
+git clone https://github.com/soham-2020/Edge-Visual-Inspection-ESP32.git
+cd Edge-Visual-Inspection-ESP32
 ```
 
----
+> **Performance results:** The project reports 87.8% overall accuracy, 94.8% anomaly recall, 78.4% normal recall, an anomaly F1 score of 0.90, about 643 ms inference per frame, and about 280 KB RAM use. These are the project's documented measurements; this repository update has not independently reproduced them.
 
-## Model Performance
+## Repository contents
 
-<div align="center">
-
-| Metric | Value |
-|--------|-------|
-| Overall Accuracy | **87.8%** |
-| Anomaly Recall | **94.8%** |
-| Normal Recall | **78.4%** |
-| F1 Score (Anomaly) | **0.90** |
-| Model Architecture | MobileNetV2 96x96 (int8 quantized) |
-| Inference Time | ~643ms / frame |
-| RAM Footprint | ~280KB / 520KB |
-| Model Size | < 1MB |
-
-</div>
-
-> In industrial safety, missing a real defect is far more dangerous than a false alarm.
-> We optimized for anomaly recall — 94.8% means almost nothing slips through undetected.
-
----
-
-## Tech Stack
-
-<div align="center">
-
-| Layer | Technology |
-|-------|-----------|
-| Microcontroller | ESP32-CAM (AI Thinker) with OV2640 |
-| Programmer | CP2102 USB-TTL |
-| ML Framework | TensorFlow Lite Micro |
-| Training Pipeline | Edge Impulse Studio |
-| Firmware IDE | Arduino IDE 2.x |
-| IoT Protocol | MQTT (PubSubClient) |
-| Message Broker | Mosquitto |
-| Dashboard | Node-RED |
-| OS | Ubuntu 24 (WSL2) |
-| Auth | bcrypt + MQTT Credentials |
-| Dataset | Kaggle Casting Product QC (7,284 images) |
-
-</div>
-
----
-
-## Security Architecture
-
-```
-+--------------------------------------------------+
-|                  Security Layers                 |
-+--------------------------------------------------+
-|  MQTT username + password authentication         |
-|  Anonymous connections disabled                  |
-|  Broker bound to 0.0.0.0 (all interfaces)        |
-|  Node-RED editor protected with bcrypt hash      |
-|  Credentials isolated in separate config files   |
-+--------------------------------------------------+
-|  Planned: mTLS mutual certificate authentication |
-+--------------------------------------------------+
+```text
+.
+├── esp32cam_firmware1.ino        # ESP32-CAM inference and MQTT publisher
+├── secrets.h.example             # Local Wi-Fi/MQTT settings template
+├── model/README.md               # Model details and export instructions
+├── dashboard/
+│   ├── node-red-flow.json        # Importable Dashboard 1 flow
+│   └── README.md                 # Dashboard install/configuration
+├── mosquitto/security.conf       # Broker authentication configuration
+├── scripts/mqtt_smoke_test.py    # Hardware-free synthetic MQTT publish
+└── requirements-smoke-test.txt
 ```
 
----
+## Requirements
 
-## Setup Instructions
+### Hardware
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/SohamVashistha/Motor-Anomaly-Detection-TinyML
-cd Motor-Anomaly-Detection-TinyML
+- AI Thinker ESP32-CAM with OV2640 camera and working PSRAM.
+- USB-to-TTL adapter (such as CP2102), suitable 5 V power, and jumper wires.
+- For flashing: connect GPIO0 to GND, upload, then disconnect GPIO0 from GND and reset.
+
+### Arduino IDE and board configuration
+
+1. Install Arduino IDE 2.x.
+2. In **Boards Manager**, install **esp32 by Espressif Systems**.
+3. Select **Tools → Board → esp32 → AI Thinker ESP32-CAM**.
+4. Select the serial port for the USB-to-TTL adapter. For upload, use 115200 baud if the adapter/board is unreliable at a higher speed.
+5. Enable PSRAM if the installed board package exposes that option. Select a partition scheme with enough app space for the exported model (the model is documented as under 1 MB; “Huge APP” is a suitable choice where available).
+
+The firmware also uses these libraries:
+
+| Library | Installation |
+|---|---|
+| Edge Impulse generated Arduino library for this project | Export and install as described below |
+| PubSubClient by Nick O'Leary | Arduino Library Manager |
+| ArduinoJson 6.x | Arduino Library Manager |
+| WiFi and esp_camera | Included with the Espressif ESP32 board package |
+
+Use ArduinoJson 6.x because the sketch uses `StaticJsonDocument`. The generated Edge Impulse header is not included in this repository: it is project-specific and must be exported from the Edge Impulse project.
+
+## Obtain and install the Edge Impulse model library
+
+1. Sign in to Edge Impulse and open the project that generated this model.
+2. Open **Deployment**, select **Arduino library**, and build/download the library ZIP. Choose the int8 deployment that matches the model used for the reported results.
+3. In Arduino IDE, choose **Sketch → Include Library → Add .ZIP Library…** and select the downloaded ZIP.
+4. Confirm that the installed library provides `MetalMind-project-1_inferencing.h`, which the sketch includes.
+5. In the Edge Impulse project, verify the input dimensions and camera sensor type match the firmware's camera image classifier. Re-export after any model/project changes.
+
+The Edge Impulse project/export is not committed here, so a clone alone cannot compile the inference sketch until the matching library is obtained and installed.
+
+## Configure credentials
+
+The sketch includes a local `secrets.h` file, which is ignored by Git.
+
+```sh
+cp secrets.h.example secrets.h
 ```
 
-### 2. Configure MQTT Broker
-```bash
-sudo apt install mosquitto mosquitto-clients -y
+Edit `secrets.h` and set:
+
+- `WIFI_SSID` and `WIFI_PASSWORD` for a 2.4 GHz Wi-Fi network.
+- `MQTT_SERVER` to the Mosquitto computer's LAN IP address.
+- `MQTT_USERNAME` and `MQTT_PASSWORD` to a broker account.
+- `MQTT_PORT` (1883 by default).
+
+Do not commit or share `secrets.h`. Rotate a credential if it has ever been published. The firmware and broker use plain MQTT on port 1883; keep the broker on a trusted LAN and firewall the port from the public internet. Add TLS before using an untrusted network.
+
+## Run Mosquitto
+
+Install Mosquitto and its command-line clients on the computer that will host the broker. Create the password file once:
+
+```sh
 sudo mosquitto_passwd -c /etc/mosquitto/passwd mqttuser
-sudo nano /etc/mosquitto/conf.d/security.conf
 ```
-```
-listener 1883 0.0.0.0
-allow_anonymous false
-password_file /etc/mosquitto/passwd
-```
-```bash
+
+Copy `mosquitto/security.conf` into Mosquitto's configuration directory (commonly `/etc/mosquitto/conf.d/security.conf` on Debian/Ubuntu), then restart the service:
+
+```sh
 sudo systemctl restart mosquitto
+sudo systemctl status mosquitto
 ```
 
-### 3. Launch Node-RED Dashboard
-```bash
-sudo npm install -g --unsafe-perm node-red
-node-red &
-# Open http://localhost:1880
-# Import dashboard/node-red-flow.json
+The configuration listens on port 1883, requires authentication, and disables anonymous access. Permit port 1883 only from the trusted local network. The ESP32 connects to the host's LAN IP; Node-RED can use `127.0.0.1` when it runs on the same host.
+
+## Install and configure Node-RED
+
+Follow the [dashboard setup guide](dashboard/README.md). Import `dashboard/node-red-flow.json`, then edit its MQTT broker node with the host and credentials. The flow listens on `motor/status`; the firmware publishes JSON containing `status`, `confidence`, `dsp_ms`, and `classification_ms`. The Node-RED Dashboard 1 UI is normally available at `http://localhost:1880/ui`.
+
+## Flash the firmware
+
+1. Install the Edge Impulse ZIP, PubSubClient, and ArduinoJson as described above.
+2. Copy `secrets.h.example` to `secrets.h` and add your local settings.
+3. Open `esp32cam_firmware1.ino` from the repository root in Arduino IDE.
+4. Select **AI Thinker ESP32-CAM** and the serial port. Connect GPIO0 to GND and upload.
+5. Disconnect GPIO0 from GND, press Reset, then open Serial Monitor at 115200 baud.
+
+## Hardware-free MQTT smoke test
+
+This test sends one synthetic event with the same topic and JSON keys used by the firmware. It requires a reachable authenticated Mosquitto broker and Python, but no ESP32 or camera.
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-smoke-test.txt
+export MQTT_HOST=192.168.1.10
+export MQTT_PORT=1883
+export MQTT_USERNAME=mqttuser
+export MQTT_PASSWORD='your-broker-password'
+python scripts/mqtt_smoke_test.py
 ```
 
-### 4. Flash ESP32-CAM
-```
-1. Open firmware/esp32cam_firmware.ino in Arduino IDE
-2. Update WiFi credentials and MQTT server IP
-3. Connect IO0 to GND for flash mode
-4. Board: AI Thinker ESP32-CAM | Port: COMX
-5. Upload, remove IO0 wire, press Reset
-6. Open Serial Monitor at 115200 baud
-```
+Set `MQTT_HOST` to the broker's LAN IP. A successful run waits for the broker's QoS 1 acknowledgment and prints `PASS`. With the flow deployed, check that the status text shows `anomaly` and the gauge shows `94.8`. This verifies the MQTT connection and publish path; it is not firmware compilation, model validation, or physical hardware testing.
 
----
+## Verification status
 
-## Future Scope
+- **Repository and flow configuration:** checked for file paths, JSON validity, topic `motor/status`, the displayed `status`/`confidence` fields, and declared Dashboard 1 dependency.
+- **Synthetic MQTT publish:** run the smoke test above against your broker to verify connectivity and publishing without hardware.
+- **Firmware compilation:** not verified from a clean clone because the required Edge Impulse Arduino export is not part of this repository. No ESP32 Arduino toolchain or model export was available during this repository review.
+- **Hardware:** not tested here. Camera capture, inference timing, Wi-Fi behavior, and on-device memory use require the target board and matching model export.
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Relay Motor Control | Connect relay module to ESP32 GPIO for remote start/stop from dashboard. On high-confidence anomaly, system auto-cuts motor power — converting from pure monitoring to closed-loop control | High |
-| mTLS on MQTT | Certificate-based mutual authentication for encrypted data transmission | Medium |
-| Grafana + InfluxDB | Time-series anomaly logging and historical trend dashboards | Medium |
-| OTA Firmware Updates | Push model updates wirelessly without physical access | Medium |
-| Multi-Camera Support | Monitor multiple motors from a single dashboard | Low |
-| Edge TPU Deployment | Port to Google Coral for faster inference at higher FPS | Low |
+## Reported model metrics
 
----
+| Metric | Project-reported value |
+|---|---:|
+| Overall accuracy | 87.8% |
+| Anomaly recall | 94.8% |
+| Normal recall | 78.4% |
+| Anomaly F1 score | 0.90 |
+| Model | MobileNetV2, 96×96, int8 |
+| Inference time | About 643 ms/frame |
+| RAM use | About 280 KB of 520 KB |
+| Model size | Under 1 MB |
 
-## Industry Applications
-
-| Industry | Application |
-|----------|------------|
-| Manufacturing | PCB defect detection on assembly lines |
-| Power Sector | Motor and transformer health monitoring |
-| Automotive | Weld quality inspection on chassis lines |
-| Pharma | Pill packaging completeness detection |
-| Mining | Conveyor belt spillage monitoring |
-
----
-
-## Key Technical Decisions
-
-**Why MobileNetV2 over a custom CNN?**
-Pre-trained on ImageNet and fine-tuned for our domain. Transfer learning delivers stronger feature extraction with far less training data than building from scratch.
-
-**Why int8 quantization?**
-4x smaller model, faster inference, and negligible accuracy drop. Essential for fitting inside ESP32's 520KB RAM without floating point hardware acceleration.
-
-**Why MQTT over HTTP?**
-Persistent connections, minimal overhead, pub/sub pattern maps perfectly to sensor-to-dashboard IoT flow. Industry standard for embedded IoT communication.
-
-**Why auto class weighting?**
-Dataset had a 3:1 anomaly-to-normal imbalance. Without weighting, normal recall was only 34%. With auto-weighting it jumped to 78.4% — single toggle, massive impact.
-
----
-
-## Repository Structure
-
-```
-Motor-Anomaly-Detection-TinyML/
-|
-|-- firmware/
-|   |-- esp32cam_firmware.ino     <- ESP32 inference + MQTT publish
-|
-|-- dashboard/
-|   |-- node-red-flow.json        <- Importable Node-RED flow
-|
-|-- mosquitto/
-|   |-- security.conf             <- Broker security configuration
-|
-|-- model/
-|   |-- README.md                 <- Edge Impulse project link + metrics
-|
-|-- README.md
-```
-
----
+Dataset documented by the project: Casting Product Quality Inspection, 7,284 images. Metrics are retained from the project documentation and have not been independently reproduced by this repository change.
 
 ## References
 
-- [Edge Impulse Documentation](https://docs.edgeimpulse.com)
-- [Casting Product Dataset - Kaggle](https://www.kaggle.com/datasets/ravirajsinh45/real-life-industrial-dataset-of-casting-product)
-- [TensorFlow Lite Micro](https://www.tensorflow.org/lite/microcontrollers)
-- [Mosquitto MQTT Broker](https://mosquitto.org)
-- [Node-RED](https://nodered.org)
-
----
-
-<div align="center">
-
-Built by [Soham Vashistha](https://github.com/SohamVashistha)
-
-*The best AI is the one that runs where the problem is.*
-
-</div>
+- [Edge Impulse documentation](https://docs.edgeimpulse.com/)
+- [Casting Product dataset](https://www.kaggle.com/datasets/ravirajsinh45/real-life-industrial-dataset-of-casting-product)
+- [Mosquitto documentation](https://mosquitto.org/documentation/)
+- [Node-RED documentation](https://nodered.org/docs/)
